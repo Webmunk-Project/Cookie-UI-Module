@@ -1,4 +1,4 @@
-/* eslint-disable no-eval */
+/* eslint-disable no-eval, object-shorthand */
 /* global chrome, crypto, HTMLStyleElement */
 
 function setupAutoConsent () {
