@@ -23,11 +23,9 @@
   /** TODO: Change to show pop-up in-page **/
 
   async function showOptOutStatus (tabId, status, cmp = '') {
-    console.log('[AUTOCONSENT/WORKER] showOptOutStatus: ' + status + ' / ' + cmp)
+    console.log('[Uniform Cookie UI] showOptOutStatus: ' + status + ' / ' + cmp)
 
     let title = ''
-
-    let openPopup = false
 
     let icon = '../modules/cookie-ui/images/cookie-idle.png'
 
@@ -49,12 +47,7 @@
     } else if (status === 'available') {
       title = `Click to opt out (${cmp})`
       icon = '../modules/cookie-ui/images/cookie-green.png'
-
-      openPopup = true
     }
-
-    console.log('ACTION: ')
-    console.log(chrome.action)
 
     await chrome.action.setTitle({
       tabId,
@@ -65,10 +58,6 @@
       tabId,
       path: icon
     })
-
-    if (openPopup && chrome.action.openPopup !== undefined) {
-      chrome.action.openPopup()
-    }
   }
 
   async function loadRules () {
@@ -79,11 +68,8 @@
   }
 
   async function initConfig () {
-    console.log('init sw')
     const storedConfig = await storageGet('config')
-    console.log('storedConfig', storedConfig)
     if (!storedConfig) {
-      console.log('init config')
       const defaultConfig = {
         enabled: true,
         autoAction: 'doNothing', // 'optOut',
@@ -126,16 +112,40 @@
   })
 
   chrome.runtime.onMessage.addListener(async (msg, sender) => {
+    const tabId = sender.tab.id
+
+    if (msg.content === 'cookie_ui_insert_css') {
+      console.log('[Cookie UI] Insert CSS...')
+
+      let css = '.cookie-ui-accept-all { border: 10px solid #43A047 !important; }\n'
+      css += '.cookie-ui-reject-all { border: 10px solid #D32F2F !important; }\n'
+      css += '.cookie-ui-accept-some { border: 10px solid #039BE5 !important; }\n'
+      css += '.cookie-ui-settings { border: 10px solid #FFFF00 !important; }\n'
+
+      css += '#uniform_cookie_ui { z-index: 2147483647 !important; position: fixed; }\n'
+
+      chrome.scripting.insertCSS({
+        target: {
+          tabId: tabId, // eslint-disable-line object-shorthand
+          allFrames: true
+        },
+        css: css, // eslint-disable-line object-shorthand
+        origin: 'USER'
+      }, function () {
+      })
+
+      return true
+    }
+
     if (msg.type === undefined) {
       return false
     }
 
-    const tabId = sender.tab.id
     const frameId = sender.frameId
     const rules = await storageGet('rules')
     const autoconsentConfig = await storageGet('config')
 
-    console.log('[Cookie UI] MESSAGE: ', msg)
+    // console.log('[Cookie UI] MESSAGE: ', msg)
 
     switch (msg.type) {
       case 'init':
@@ -184,7 +194,7 @@
         break
       case 'optOutResult':
       case 'optInResult':
-        console.log('WORKER optInResult/optOutResult: ' + msg.type)
+        console.log('[Uniform Cookie UI] optInResult/optOutResult: ' + msg.type)
 
         if (msg.result) {
           await showOptOutStatus(tabId, 'working', msg.cmp)

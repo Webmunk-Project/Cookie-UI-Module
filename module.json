@@ -11,9 +11,7 @@
     "images/cookie-green.png",
     "images/cookie-idle.png",
     "images/cookie-red.png",
-    "images/cookie-yellow.png",
-    "js/popup.js",
-    "cookie_ui_popup.html"
+    "images/cookie-yellow.png"
   ], 
   "permissions": [
     "cookies",
@@ -24,10 +22,5 @@
   ],
   "host_permissions": [
     "*://*/*"
-  ],
-  "action": {
-    "browser_style": true,
-    "default_title": "Cookie UI",
-    "default_popup": "js/modules/cookie-ui/cookie_ui_popup.html"
-  }
+  ]
 }

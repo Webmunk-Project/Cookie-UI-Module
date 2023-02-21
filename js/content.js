@@ -1588,7 +1588,6 @@ function setupAutoConsent () {
     window.close()
   }
   async function evalAction (config) {
-    console.log('eval!', config.code)
     return new Promise(resolve => {
       try {
         if (config.async) {
@@ -1685,11 +1684,15 @@ function setupAutoConsent () {
       return true
     }
 
-    async optIn () {
+    async optIn (chosenTypes) {
+      if (chosenTypes === undefined) {
+        chosenTypes = ['D', 'A', 'B', 'E', 'F', 'X']
+      }
+
       await this.executeAction('HIDE_CMP')
       await this.executeAction('OPEN_OPTIONS')
       await this.executeAction('HIDE_CMP')
-      await this.executeAction('DO_CONSENT', ['D', 'A', 'B', 'E', 'F', 'X'])
+      await this.executeAction('DO_CONSENT', chosenTypes)
       await this.executeAction('SAVE_CONSENT')
       return true
     }
@@ -1887,15 +1890,23 @@ function setupAutoConsent () {
     }
 
     async doOptOut () {
-      console.log('doOptOut[1]')
+      const payload = {
+        'url*': window.location.href,
+        platform: this.foundCmp.name
+      }
+
+      chrome.runtime.sendMessage({
+        content: 'record_data_point',
+        generator: 'cookie-ui-opt-out',
+        payload: payload // eslint-disable-line object-shorthand
+      })
+
       let optOutResult
       if (!this.foundCmp) {
         optOutResult = false
       } else {
         optOutResult = await this.foundCmp.optOut()
       }
-
-      console.log('doOptOut[2]: ' + optOutResult)
 
       if (this.config.enablePrehide) {
         undoPrehide()
@@ -1917,13 +1928,24 @@ function setupAutoConsent () {
       return optOutResult
     }
 
-    async doOptIn () {
-      console.log('doOptIn')
+    async doOptIn (chosenTypes) {
+      const payload = {
+        'url*': window.location.href,
+        platform: this.foundCmp.name,
+        choices: chosenTypes
+      }
+
+      chrome.runtime.sendMessage({
+        content: 'record_data_point',
+        generator: 'cookie-ui-opt-in',
+        payload: payload // eslint-disable-line object-shorthand
+      })
+
       let optInResult
       if (!this.foundCmp) {
         optInResult = false
       } else {
-        optInResult = await this.foundCmp.optIn()
+        optInResult = await this.foundCmp.optIn(chosenTypes)
       }
       if (this.config.enablePrehide) {
         undoPrehide()
@@ -1984,6 +2006,8 @@ function setupAutoConsent () {
     }
 
     generateUniformHtml () {
+      const availableConsents = this.foundCmp.consentTypes() // .filter(item => item !== 'A')
+
       let htmlCode = '<div id="uniform_cookie_ui">'
 
       htmlCode += '<div class="lightbox" id="uniform_cookie_lightbox">'
@@ -2002,35 +2026,19 @@ function setupAutoConsent () {
       htmlCode += '    <div id="uniform_cookie_ui_section_cookie_settings" class="uniform_cookie_ui_hide_element">'
 
       const categories = [
-        '[D] Information Storage and Access',
-        '[A] Preferences and Functionality',
-        '[B] Performance and Analytics',
-        '[E] Content selection, delivery, and reporting',
-        '[F] Ad selection, delivery, and reporting',
-        '[X] Other Purposes'
+        ['[D] Information Storage and Access', 'D'],
+        ['[A] Preferences and Functionality', 'A'],
+        ['[B] Performance and Analytics', 'B'],
+        ['[E] Content selection, delivery, and reporting', 'E'],
+        ['[F] Ad selection, delivery, and reporting', 'F'],
+        ['[X] Other Purposes', 'X']
       ]
-
-      /*
-              const relevantTypes = [
-        'D', // Information Storage and Access
-        'A', // Preferences and Functionality
-        'B', // Performance and Analytics
-        'E', // Content selection, delivery, and reporting
-        'F', // Ad selection, delivery, and reporting
-        'X' // Other Purposes
-      ]
-
-      */
-
-      const availableConsents = this.foundCmp.consentTypes().filter(item => item !== 'A')
 
       categories.forEach(function (category) {
         let categoryClasses = ''
 
         availableConsents.forEach(function (consent) {
-          const search = '[' + consent + ']'
-
-          if (category.includes(search)) {
+          if (category[1] === consent) {
             if (categoryClasses !== '') {
               categoryClasses = categoryClasses + ' '
             }
@@ -2043,24 +2051,36 @@ function setupAutoConsent () {
 
         if (categoryClasses === '') {
           disabledAttr = 'disabled'
+
+          if (availableConsents.length === 0) {
+            disabledAttr += ' checked'
+          }
         }
 
         htmlCode += '      <div class="uniform_cookie_ui_category">'
         htmlCode += '        <label>'
-        htmlCode += '          <input type="checkbox" name="uniform_cookie_ui_category" value="' + category + '" class="' + categoryClasses + '" ' + disabledAttr + '>'
-        htmlCode += '          <span>' + category + '</span>'
+        htmlCode += '          <input type="checkbox" name="uniform_cookie_ui_category" value="' + category[1] + '" class="' + categoryClasses + '" ' + disabledAttr + '>'
+        htmlCode += '          <span>' + category[0] + '</span>'
         htmlCode += '        </label>'
         htmlCode += '      </div>'
       })
 
       htmlCode += '      <div class="uniform_cookie_ui_category">'
       htmlCode += '        <label>'
-      htmlCode += '          <input type="checkbox" id="uniform_cookie_ui_category_select_all" value="Select All">'
+
+      if (availableConsents.length === 0) {
+        htmlCode += '          <input type="checkbox" id="uniform_cookie_ui_category_select_all" value="all" disabled checked>'
+      } else {
+        htmlCode += '          <input type="checkbox" id="uniform_cookie_ui_category_select_all" value="all">'
+      }
+
       htmlCode += '          <span class="uniform_cookie_ui_category_select_all">Select All</span>'
       htmlCode += '        </label>'
       htmlCode += '      </div>'
 
-      htmlCode += '      <p class="uniform_cookie_ui_message_limited_selection">This site does not allow you to select the types of cookies that you may receive. (TODO: Replace with link to cookie settings if available, but this is not a Consent-O-Matic rule?)</p>'
+      if (availableConsents.length === 0) {
+        htmlCode += '      <p class="uniform_cookie_ui_message_limited_selection">This site does not allow you to select the types of cookies that you may receive.</p>'
+      }
 
       htmlCode += '      <button style="border: 1px solid #8f8f8f; background-color: #70AC47; color: #FFFFFF;" id="uniform_cookie_ui_button_accept_selected">Accept Selected Cookies</button>'
 
@@ -2209,6 +2229,8 @@ function setupAutoConsent () {
     }
 
     showUniformInterface () {
+      const me = this
+
       const cssCode = this.generateUniformHtmlCss()
 
       const cssWrapper = document.createElement('style')
@@ -2223,27 +2245,53 @@ function setupAutoConsent () {
 
       document.querySelector('body').appendChild(wrapper.firstChild)
 
-      const closeButton = document.getElementById('uniform_cookie_ui_close_button')
-
-      closeButton.addEventListener('click', function (e) {
+      const closeLightbox = function () {
         const lightbox = document.getElementById('uniform_cookie_lightbox')
 
         lightbox.className += ' lightbox_closed'
-      }, false)
+      }
 
-      const acceptAllButton = document.getElementById('uniform_cookie_ui_button_accept_all')
+      const closeButton = document.getElementById('uniform_cookie_ui_close_button')
+
+      closeButton.addEventListener('click', function (e) {
+        closeLightbox()
+      }, false)
 
       const settingsSection = document.getElementById('uniform_cookie_ui_section_cookie_settings')
 
       const settingsButton = document.getElementById('uniform_cookie_ui_button_cookie_settings')
 
+      // Settings...
+
       settingsButton.addEventListener('click', function (e) {
         if (settingsSection.classList.contains('uniform_cookie_ui_hide_element')) {
           settingsSection.classList.remove('uniform_cookie_ui_hide_element')
           acceptAllButton.classList.add('uniform_cookie_ui_hide_element')
+
+          const payload = {
+            'url*': window.location.href,
+            platform: me.foundCmp.name
+          }
+
+          chrome.runtime.sendMessage({
+            content: 'record_data_point',
+            generator: 'cookie-ui-popup-open-settings',
+            payload: payload // eslint-disable-line object-shorthand
+          })
         } else {
           settingsSection.classList.add('uniform_cookie_ui_hide_element')
           acceptAllButton.classList.remove('uniform_cookie_ui_hide_element')
+
+          const payload = {
+            'url*': window.location.href,
+            platform: me.foundCmp.name
+          }
+
+          chrome.runtime.sendMessage({
+            content: 'record_data_point',
+            generator: 'cookie-ui-popup-close-settings',
+            payload: payload // eslint-disable-line object-shorthand
+          })
         }
       }, false)
 
@@ -2265,11 +2313,104 @@ function setupAutoConsent () {
 
       selectAllCheckbox.click()
 
-      // this.foundCmp
+      const availableConsents = this.foundCmp.consentTypes() // .filter(item => item !== 'A')
 
-      //        const survey = document.getElementById('uniform_cookie_ui')
+      // Allow selected
 
-      //        survey.style.setProperty('display', 'block')
+      const acceptSelectedButton = document.getElementById('uniform_cookie_ui_button_accept_selected')
+
+      acceptSelectedButton.addEventListener('click', async function (e) {
+        if (availableConsents.length === 0) {
+          await me.doOptIn().then(() => {
+            closeLightbox()
+          })
+        } else {
+          const chosenTypes = []
+
+          const editableElements = Array.from(document.getElementsByClassName('uniform_cookie_ui_category_checkbox_editable'))
+
+          editableElements.forEach(function (element) {
+            if (element.value !== 'all') {
+              if (element.checked) {
+                console.log('CHOSEN')
+                console.log(element.value)
+                chosenTypes.push(element.value)
+              }
+            }
+          })
+
+          console.log('CHOSE: ')
+          console.log(chosenTypes)
+
+          await me.doOptIn(chosenTypes).then(() => {
+            closeLightbox()
+
+            const payload = {
+              'url*': window.location.href,
+              platform: me.foundCmp.name
+            }
+
+            chrome.runtime.sendMessage({
+              content: 'record_data_point',
+              generator: 'cookie-ui-popup-accept-selected',
+              payload: payload // eslint-disable-line object-shorthand
+            })
+          })
+        }
+      }, false)
+
+      // Allow all
+
+      const acceptAllButton = document.getElementById('uniform_cookie_ui_button_accept_all')
+
+      acceptAllButton.addEventListener('click', async function (e) {
+        await me.doOptIn().then(() => {
+          closeLightbox()
+
+          const payload = {
+            'url*': window.location.href,
+            platform: me.foundCmp.name
+          }
+
+          chrome.runtime.sendMessage({
+            content: 'record_data_point',
+            generator: 'cookie-ui-popup-accept-all',
+            payload: payload // eslint-disable-line object-shorthand
+          })
+        })
+      }, false)
+
+      // Reject all
+
+      const rejectAllButton = document.getElementById('uniform_cookie_ui_button_reject_all')
+
+      rejectAllButton.addEventListener('click', async function (e) {
+        await me.doOptOut().then(() => {
+          closeLightbox()
+
+          const payload = {
+            'url*': window.location.href,
+            platform: me.foundCmp.name
+          }
+
+          chrome.runtime.sendMessage({
+            content: 'record_data_point',
+            generator: 'cookie-ui-popup-reject-all',
+            payload: payload // eslint-disable-line object-shorthand
+          })
+        })
+      }, false)
+
+      const payload = {
+        'url*': window.location.href,
+        platform: me.foundCmp.name
+      }
+
+      chrome.runtime.sendMessage({
+        content: 'record_data_point',
+        generator: 'cookie-ui-popup-display-choices',
+        payload: payload // eslint-disable-line object-shorthand
+      })
     }
 
     async receiveMessageCallback (message) {
@@ -2290,8 +2431,6 @@ function setupAutoConsent () {
           resolveEval(message.id, message.result)
           break
         case 'showUniformInterface':
-          console.log('SHOW INTERFACE')
-
           this.showUniformInterface()
           break
       }
@@ -2306,10 +2445,113 @@ function setupAutoConsent () {
 }
 
 window.registerModuleCallback(function (config) {
+  chrome.runtime.sendMessage({
+    content: 'cookie_ui_insert_css'
+  })
+
   if (window.location === window.parent.location) {
     if (window.autoConsentSetup === undefined) {
       window.autoConsentSetup = true
       setupAutoConsent()
     }
+
+    const cookieLabels = {
+      '#didomi-notice-agree-button': 'cookie-ui-accept-all',
+      'button:has(:contains("Accept all"))': 'cookie-ui-accept-all',
+      'button:has(:contains("Reject all"))': 'cookie-ui-reject-all',
+      'div[role="button"]:has(:contains("Accept all cookies"))': 'cookie-ui-accept-all',
+      'button:contains("Accept all cookies")': 'cookie-ui-accept-all',
+      'button:contains("Necessary cookies only")': 'cookie-ui-accept-some',
+      'button:contains("Confirm my choices")': 'cookie-ui-accept-some',
+      'button.js-cookie-settings:contains("Customize settings")': 'cookie-ui-settings',
+      'div[role="button"]:has(:contains("Refuse non-essential cookies"))': 'cookie-ui-reject-all',
+      '[data-tracking-opt-in-accept="true"]': 'cookie-ui-accept-all',
+      'button#c-p-bn': 'cookie-ui-accept-all',
+      'button#c-s-bn': 'cookie-ui-reject-all',
+      'button:contains("Do not sell my personal information")': 'cookie-ui-reject-all',
+      'button:contains("Cookie settings")': 'cookie-ui-settings',
+      'button#onetrust-accept-btn-handler': 'cookie-ui-accept-all',
+      'button#onetrust-reject-all-handler': 'cookie-ui-reject-all',
+      'button#onetrust-pc-btn-handler': 'cookie-ui-settings'
+    }
+
+    const cookieClickLabels = [
+      '.cookie-ui-accept-all',
+      '.cookie-ui-reject-all',
+      '.cookie-ui-accept-some',
+      '.cookie-ui-settings'
+    ]
+
+    const tagCookieElements = function () {
+      console.log('[Cookie Manager] Looking for UI elements...')
+
+      for (const selector in cookieLabels) {
+        const addClass = cookieLabels[selector]
+
+        const rule = selector + ':not(.' + addClass + ')'
+
+        const matches = $(rule)
+
+        console.log('[Cookie UI] Searching for ' + rule + '... ' + matches.length + ' found.')
+
+        if (matches.length > 0) {
+          console.log('[Cookie UI] Found ' + selector + ': ' + matches.length)
+
+          matches.addClass(addClass)
+        }
+      }
+
+      cookieClickLabels.forEach(function (clickLabel) {
+        const rule = clickLabel + ':not(.cookie-ui-click-added)'
+
+        $(rule).on('click', function (event) {
+          const logElement = $(event.target)
+
+          console.log('CLICK')
+          console.log(logElement)
+
+          console.log('[Cookie UI] Clicked ' + clickLabel + '.')
+
+          chrome.runtime.sendMessage({
+            content: 'record_data_point',
+            generator: 'cookie-ui-element-click',
+            payload: {
+              'element-class': clickLabel,
+              'url*': window.location.href,
+              'page-title*': document.title,
+              'element-content*': logElement.outerHTML,
+              offset: logElement.offset(),
+              size: {
+                width: logElement.outerWidth(true),
+                height: logElement.outerHeight(true)
+              }
+            }
+          }, function (message) {
+
+          })
+        })
+        $(rule).addClass('cookie-ui-click-added')
+      })
+
+      for (const selector in cookieLabels) {
+        const addClass = cookieLabels[selector]
+
+        const rule = selector + ':not(.' + addClass + ')'
+
+        console.log('[Cookie UI] Searching for ' + rule)
+
+        const matches = $(rule)
+
+        if (matches.length > 0) {
+          console.log('[Cookie UI] Found ' + selector + ': ' + matches.length)
+
+          matches.addClass(addClass)
+        }
+      }
+    }
+
+    window.registerModulePageChangeListener(tagCookieElements)
+
+    tagCookieElements()
   }
 })
