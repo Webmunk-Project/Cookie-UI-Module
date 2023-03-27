@@ -1,5 +1,5 @@
 /* eslint-disable no-eval */
-/* global chrome, registerCustomModule */
+/* global chrome, registerCustomModule, crypto */
 
 (function () {
   'use strict'
@@ -115,7 +115,7 @@
     const tabId = sender.tab.id
 
     if (msg.content === 'cookie_ui_insert_css') {
-      console.log('[Cookie UI] Insert CSS...')
+      console.log('[Uniform Cookie UI] Insert CSS...')
 
       let css = '.cookie-ui-accept-all { border: 10px solid #43A047 !important; }\n'
       css += '.cookie-ui-reject-all { border: 10px solid #D32F2F !important; }\n'
@@ -152,12 +152,59 @@
         if (frameId === 0) {
           await showOptOutStatus(tabId, 'idle')
         }
-        chrome.tabs.sendMessage(tabId, {
-          type: 'initResp',
-          rules,
-          config: autoconsentConfig
-        }, {
-          frameId
+
+        chrome.storage.local.get({ 'pdk-identifier': '' }, async function (result) {
+          let userIdentifier = 'unknown'
+
+          if (result['pdk-identifier'] !== '') {
+            userIdentifier = result['pdk-identifier']
+          }
+
+          console.log('[Uniform Cookie UI] Found ID: ' + userIdentifier)
+
+          autoconsentConfig.webmunkUserId = userIdentifier
+          autoconsentConfig.webmunkURL = msg.url
+
+          const url = new URL(msg.url)
+
+          const urlUserString = userIdentifier + ' @ ' + url.hostname
+
+          const encoder = new TextEncoder()
+          const data = encoder.encode(urlUserString)
+
+          const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+
+          const hashArray = Array.from(new Uint8Array(hashBuffer)) // convert buffer to byte array
+
+          let hashSum = 0
+
+          hashArray.forEach(function (item) {
+            hashSum += item
+          })
+
+          const webmunkConditions = [
+            'settings-accept',
+            'settings-reject',
+            'settings-accept-reject',
+            'reject-accept-settings',
+            'accept-reject-settings',
+            'accept-reject-monosettings',
+            'organic'
+          ]
+
+          const selectedIndex = hashSum % webmunkConditions.length
+
+          autoconsentConfig.webmunkCondition = webmunkConditions[selectedIndex]
+
+          console.log('[Uniform Cookie UI] Selected condition: ' + autoconsentConfig.webmunkCondition + ' for ' + urlUserString)
+
+          chrome.tabs.sendMessage(tabId, {
+            type: 'initResp',
+            rules,
+            config: autoconsentConfig
+          }, {
+            frameId
+          })
         })
         break
       case 'eval':
@@ -179,6 +226,7 @@
         break
       case 'popupFound':
         await showOptOutStatus(tabId, 'available', msg.cmp)
+
         storageSet({
           [`detected${tabId}`]: frameId
         })

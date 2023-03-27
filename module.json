@@ -17,8 +17,7 @@
     "cookies",
     "tabs",
     "scripting",
-    "storage",
-    "webNavigation"
+    "storage"
   ],
   "host_permissions": [
     "*://*/*"
