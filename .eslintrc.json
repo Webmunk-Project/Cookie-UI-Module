@@ -4,6 +4,10 @@
         "amd": true,
         "jquery": true
     },
+    "globals": {
+        "self": "readonly",
+        "chrome": "readonly"
+    },
     "root": true
 }
 

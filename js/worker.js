@@ -1,5 +1,5 @@
 /* eslint-disable no-eval */
-/* global chrome, registerCustomModule, crypto */
+/* global crypto */
 
 (function () {
   'use strict'
@@ -279,7 +279,7 @@
     }
   })
 
-  registerCustomModule(function (config) {
+  self.registerCustomModule(function (config) {
     console.log('[Uniform Cookie UI] Service worker initialized.')
   })
 })()
